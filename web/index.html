@@ -235,6 +235,7 @@ svg.tl{width:100%;height:120px}
   <div class="card">
     <h2>语音模型</h2>
     <p class="muted">识别完全在本机离线进行，声音不会上传。推荐 SenseVoice：准确率高、速度快。模型保存在 <code id="modelDir"></code></p>
+    <div class="form" id="formDownload" style="margin:4px 0 16px"></div>
     <div id="modelList" class="grid" style="gap:10px"></div>
     <div id="dl" style="display:none;margin-top:12px">
       <div id="dlMsg"></div>
@@ -449,6 +450,15 @@ const FIELDS = {
     ["min_count", "至少出现几次才显示", "number", {min: 1, max: 100}],
     ["min_word_len", "最短词长（字）", "number", {min: 1, max: 6, hint: "设为 1 会把单字也算进去，通常保持 2"}],
   ],
+  formDownload: [
+    ["download_source", "下载源", "select", {options: [
+      ["auto", "自动（推荐）"],
+      ["modelscope", "魔搭 ModelScope（国内）"],
+      ["hf-mirror", "hf-mirror（国内镜像）"],
+      ["huggingface", "HuggingFace（国外）"]],
+      hint: "「自动」按 魔搭 → hf-mirror → HuggingFace → GitHub 依次尝试。所有文件下载后都会用官方 SHA256 校验。Vosk 模型只能从 Vosk 官网下载，不受这里影响"}],
+    ["download_fallback", "失败时自动换其他源", "bool", {hint: "选定的源连不上、太慢或校验不通过时，继续尝试其他源。所选源没有某个文件时，也会从其他源下载"}],
+  ],
   formSystem: [
     ["hotkey", "显示/隐藏悬浮条热键", "text", {hint: "例如 Ctrl+Alt+H、Ctrl+Shift+F9"}],
     ["autostart", "开机自动启动", "bool"],
@@ -515,6 +525,7 @@ $("#btnReset").onclick = async () => {
 async function loadDevices() { DEVICES = await api("devices"); renderForms(); }
 
 // ---------- 模型 ----------
+const SOURCE_NAMES = {modelscope: "魔搭", "hf-mirror": "hf-mirror", huggingface: "HuggingFace", github: "GitHub", vosk: "Vosk 官网"};
 async function loadModels() {
   const m = await api("models");
   $("#modelDir").textContent = m.dir;
@@ -525,6 +536,7 @@ async function loadModels() {
           ${x.active ? '<span class="badge" style="background:var(--primary)">使用中</span>' : ""}
           ${x.installed ? '<span class="badge">已安装</span>' : ""}</div>
         <div class="muted" style="font-size:12px">${esc(x.desc)}</div>
+        <div class="muted" style="font-size:12px">可用下载源：${x.sources.map(s => SOURCE_NAMES[s] || s).join(" / ")}</div>
       </div>
       <div class="row">
         ${x.installed && !x.active ? `<button class="btn primary" data-use="${x.key}">使用</button>` : ""}

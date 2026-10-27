@@ -31,6 +31,8 @@ DEFAULTS = {
     "asr_model": "sensevoice",  # 见 engine.MODELS
     "models_dir": "",           # 空 = 程序目录下 models
     "language": "zh",           # SenseVoice 识别语言：zh / auto
+    "download_source": "auto",  # 模型下载源，见 engine.SOURCES
+    "download_fallback": True,  # 选定的源失败时自动换其他源
     "device": None,             # 麦克风编号，None = 系统默认
     "start_listening": True,    # 启动后自动开始监听
     # 热词

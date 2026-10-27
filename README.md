@@ -118,7 +118,16 @@
 
 #### 下载源
 
-SenseVoice 的每个文件都配了多个下载源，按顺序自动尝试：**魔搭 ModelScope（国内）→ hf-mirror（国内）→ HuggingFace → GitHub**。某个源连不上、超过 20 秒速度低于 30KB/s，或文件校验不一致，就自动换下一个。
+在「语音模型」页顶部可以选择从哪里下载 SenseVoice：
+
+| 下载源 | 说明 |
+|---|---|
+| **自动**（默认） | 按 魔搭 → hf-mirror → HuggingFace → GitHub 依次尝试 |
+| 魔搭 ModelScope | 国内，速度快，不需要翻墙 |
+| hf-mirror | 国内的 HuggingFace 镜像 |
+| HuggingFace | 国外，适合在海外使用 |
+
+勾选「失败时自动换其他源」（默认勾选）后，选定的源连不上、超过 20 秒速度低于 30KB/s 或校验不通过时，会继续尝试其他源。取消勾选就只从选定的源下载。VAD 小文件（0.6MB）在 hf-mirror 和 HuggingFace 上没有官方版本，选这两个源时会自动改从魔搭或 GitHub 下载。
 
 魔搭上的文件是社区转存的，所以每个文件下载完都会用 k2-fsa 官方发布文件的 SHA256 校验，不一致就丢掉换源，不会装上被改过的文件。
 
@@ -172,6 +181,8 @@ Vosk 模型只能从 Vosk 官网（国外）下载，国内可能很慢。
 | `start_listening` | `true` | 启动后自动开始监听 |
 | `asr_model` | `sensevoice` | 使用的模型：`sensevoice` / `vosk-small` / `vosk-large` |
 | `language` | `zh` | SenseVoice 识别语言：`zh` 中文，`auto` 自动识别（中英粤日韩） |
+| `download_source` | `auto` | 模型下载源：`auto` / `modelscope` / `hf-mirror` / `huggingface` |
+| `download_fallback` | `true` | 选定的源失败时自动换其他源 |
 | `models_dir` | `""` | 模型存放目录，留空表示程序目录下的 `models\` |
 
 ### 热词规则
@@ -299,6 +310,7 @@ tools/
   screenshots.py 用演示数据生成 README 截图
   compare_asr.py 对比识别模型的准确率、速度、内存
   e2e_engine.py  用 wav 代替麦克风，端到端测试引擎
+  test_download_sources.py  对每个下载源做一次完整下载测试
   testdata/      测试音频与参考文本
 ```
 

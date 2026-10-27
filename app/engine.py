@@ -74,6 +74,33 @@ MODELS = {
         "downloads": [{"urls": ["https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip"]}],
     },
 }
+# 管理页可选的下载源；GitHub 和 Vosk 官网不单独提供选择，只作为兜底
+SOURCES = {
+    "auto": "自动（按 魔搭 → hf-mirror → HuggingFace → GitHub 依次尝试）",
+    "modelscope": "魔搭 ModelScope（国内）",
+    "hf-mirror": "hf-mirror（国内镜像）",
+    "huggingface": "HuggingFace（国外）",
+}
+_HOSTS = {"modelscope.cn": "modelscope", "hf-mirror.com": "hf-mirror", "huggingface.co": "huggingface",
+          "github.com": "github", "alphacephei.com": "vosk"}
+SOURCE_NAMES = {"modelscope": "魔搭", "hf-mirror": "hf-mirror", "huggingface": "HuggingFace",
+                "github": "GitHub", "vosk": "Vosk 官网"}
+
+
+def source_of(url):
+    return _HOSTS.get(urllib.parse.urlparse(url).hostname, "other")
+
+
+def order_urls(urls, pref, fallback):
+    """按用户选的下载源排序。选中的源没有这个文件时，退回到全部源。"""
+    if pref not in SOURCES or pref == "auto":
+        return urls
+    chosen = [u for u in urls if source_of(u) == pref]
+    if not chosen:
+        return urls
+    return chosen + ([u for u in urls if u not in chosen] if fallback else [])
+
+
 CONNECT_TIMEOUT = 30     # 秒：连不上或长时间收不到数据就换源
 STALL_SECONDS = 20       # 连续这么久平均速度低于 MIN_SPEED 就换源
 MIN_SPEED = 30 * 1024    # 字节/秒
@@ -132,6 +159,7 @@ class Engine:
     def models(self):
         active = self.cfg["asr_model"]
         return [dict(key=k, active=k == active, installed=self.model_ready(k), path=self.model_path(k),
+                     sources=list(dict.fromkeys(source_of(u) for it in m["downloads"] for u in it["urls"])),
                      **{f: m[f] for f in ("name", "engine", "size", "desc")})
                 for k, m in MODELS.items()]
 
@@ -301,12 +329,15 @@ class Engine:
             os.makedirs(work)
             items = info["downloads"]
             weights = [it.get("bytes", 1) for it in items]
+            pref, fallback = self.cfg["download_source"], self.cfg["download_fallback"]
             for i, item in enumerate(items):
                 fname = os.path.join(work, item.get("save") or item["urls"][0].rsplit("/", 1)[-1])
                 errors = []
-                for url in item["urls"]:
+                for url in order_urls(item["urls"], pref, fallback):
+                    src = source_of(url)
                     host = urllib.parse.urlparse(url).hostname
-                    d["message"] = f"下载中：{info['name']}（{i + 1}/{len(items)}，来源 {host}）"
+                    d["message"] = (f"下载中：{info['name']}（{i + 1}/{len(items)}，"
+                                    f"来源 {SOURCE_NAMES.get(src, host)}）")
 
                     def progress(frac):
                         d["progress"] = round((sum(weights[:i]) + frac * weights[i]) * 100 / sum(weights), 1)
@@ -314,9 +345,10 @@ class Engine:
                         self._fetch(url, fname, item.get("sha256"), progress)
                         break
                     except Exception as e:
-                        errors.append(f"{host}: {e}")
+                        errors.append(f"{SOURCE_NAMES.get(src, host)}: {e}")
                 else:
-                    raise RuntimeError("所有下载源都失败了 —— " + "；".join(errors))
+                    hint = "" if fallback or pref == "auto" else "（可以换一个下载源，或勾选「失败时自动换其他源」）"
+                    raise RuntimeError("下载源都失败了 —— " + "；".join(errors) + hint)
                 if fname.endswith((".zip", ".tar.bz2")):
                     d["message"] = "解压中…"
                     self._extract(fname, work)
