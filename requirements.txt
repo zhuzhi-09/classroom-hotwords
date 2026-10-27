@@ -1,0 +1,5 @@
+vosk
+jieba
+sounddevice
+pystray
+pillow

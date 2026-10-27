@@ -1,0 +1,550 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>课堂热词 · 管理</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#fff; --text:#1d2129; --muted:#86909c; --line:#e5e6eb;
+  --primary:#2f7cf6; --primary-weak:#e8f1ff; --danger:#e5484d; --ok:#22a06b; --warn:#d9822b;
+  --radius:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#17181b; --panel:#212226; --text:#e8e9ec; --muted:#8b8f98; --line:#33353b;
+        --primary:#4b8ff7; --primary-weak:#1f2b40;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 "Microsoft YaHei UI","PingFang SC",system-ui,sans-serif}
+header{display:flex;align-items:center;gap:16px;padding:0 24px;height:56px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header h1{font-size:17px;margin:0;font-weight:700;white-space:nowrap}
+nav{display:flex;gap:4px;overflow-x:auto}
+nav button{border:0;background:none;color:var(--muted);padding:8px 14px;border-radius:8px;cursor:pointer;font:inherit;white-space:nowrap}
+nav button.active{background:var(--primary-weak);color:var(--primary);font-weight:600}
+.pill{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted)}
+.dot.on{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.dot.err{background:var(--danger)}
+main{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+.page{display:none}.page.active{display:block}
+.grid{display:grid;gap:16px}
+.g2{grid-template-columns:2fr 1fr}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px}
+.card h2{font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+.card h2 .sub{font-weight:400;color:var(--muted);font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);padding:6px 14px;border-radius:8px;cursor:pointer;font:inherit}
+button.btn:hover{border-color:var(--primary);color:var(--primary)}
+button.btn.primary{background:var(--primary);border-color:var(--primary);color:#fff}
+button.btn.danger{color:var(--danger)}
+button.btn.danger:hover{border-color:var(--danger)}
+button.btn:disabled{opacity:.5;cursor:not-allowed}
+input[type=text],input[type=number],select,textarea{font:inherit;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;width:100%}
+textarea{min-height:120px;resize:vertical}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--primary-weak);border-color:var(--primary)}
+.hot{display:flex;flex-wrap:wrap;gap:10px;min-height:60px;align-items:center}
+.hot span{padding:6px 14px;border-radius:999px;background:var(--primary-weak);color:var(--primary);font-weight:600}
+.hot span b{font-weight:400;opacity:.7;margin-left:4px}
+.hot span.top{background:#fff3d6;color:#a86400}
+@media (prefers-color-scheme: dark){.hot span.top{background:#3d3115;color:#ffcc66}}
+.muted{color:var(--muted)}
+.meter{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;flex:1;min-width:120px}
+.meter i{display:block;height:100%;background:var(--ok);width:0;transition:width .15s}
+.partial{min-height:24px;color:var(--muted);font-style:italic}
+.list{max-height:420px;overflow:auto}
+.utt{padding:8px 0;border-bottom:1px dashed var(--line)}
+.utt:last-child{border:0}
+.utt .t{color:var(--muted);font-size:12px;margin-right:8px}
+.utt .w{font-size:12px;color:var(--primary)}
+.utt .del{float:right;visibility:hidden;color:var(--danger);cursor:pointer;font-size:12px}
+.utt:hover .del{visibility:visible}
+.stat{font-size:26px;font-weight:700}
+.sessions{display:grid;grid-template-columns:300px 1fr;gap:16px}
+.sess{padding:10px 12px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+.sess:hover{background:var(--bg)}
+.sess.active{border-color:var(--primary);background:var(--primary-weak)}
+.sess .n{font-weight:600}
+.sess .m{font-size:12px;color:var(--muted)}
+.badge{font-size:11px;background:var(--ok);color:#fff;border-radius:4px;padding:0 6px;margin-left:6px}
+.bars .bar{display:grid;grid-template-columns:110px 1fr 44px;gap:10px;align-items:center;padding:3px 0;cursor:pointer}
+.bars .bar:hover .lbl{color:var(--primary)}
+.bars .track{height:14px;background:var(--bg);border-radius:4px;overflow:hidden}
+.bars .track i{display:block;height:100%;background:var(--primary);border-radius:4px}
+.bars .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bars .num{text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+.form{display:grid;grid-template-columns:180px 1fr;gap:12px 16px;align-items:center}
+.form label{color:var(--muted)}
+.form .hint{grid-column:2;font-size:12px;color:var(--muted);margin-top:-8px}
+.form input[type=range]{width:100%}
+.form .inline{display:flex;gap:8px;align-items:center}
+.form .inline input[type=color]{width:44px;height:30px;border:1px solid var(--line);border-radius:6px;padding:2px;background:var(--bg)}
+.tabs2{display:flex;gap:4px;margin-bottom:12px}
+.tabs2 button{border:0;background:none;padding:4px 12px;border-radius:6px;cursor:pointer;color:var(--muted);font:inherit}
+.tabs2 button.active{background:var(--bg);color:var(--text);font-weight:600}
+#toast{position:fixed;left:50%;bottom:28px;transform:translateX(-50%);background:#323232;color:#fff;padding:8px 18px;border-radius:8px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:20}
+#toast.show{opacity:.95}
+#toast.err{background:var(--danger)}
+.preview{border-radius:8px;display:flex;align-items:center;justify-content:center;gap:16px;margin:4px 0 6px;overflow:hidden}
+.progress{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin:8px 0}
+.progress i{display:block;height:100%;background:var(--primary);width:0}
+svg.tl{width:100%;height:120px}
+.empty{padding:40px 0;text-align:center;color:var(--muted)}
+.alert{background:#fff4e5;color:#8a4b00;border:1px solid #ffd8a8;border-radius:8px;padding:10px 14px;margin-bottom:16px;display:none}
+@media (prefers-color-scheme: dark){.alert{background:#3a2a12;color:#ffcc80;border-color:#5c4320}}
+@media (max-width: 860px){.g2,.sessions{grid-template-columns:1fr}.form{grid-template-columns:1fr}.form .hint{grid-column:1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎙 课堂热词</h1>
+  <nav id="nav">
+    <button data-page="live" class="active">实时</button>
+    <button data-page="records">课堂记录</button>
+    <button data-page="dict">词库</button>
+    <button data-page="overlay">悬浮条</button>
+    <button data-page="settings">识别与系统</button>
+    <button data-page="model">语音模型</button>
+  </nav>
+  <div class="pill"><span class="dot" id="dot"></span><span id="statusText">连接中…</span></div>
+</header>
+
+<main>
+<div class="alert" id="alert"></div>
+
+<!-- 实时 -->
+<section class="page active" id="page-live">
+  <div class="grid g2">
+    <div class="grid">
+      <div class="card">
+        <h2>当前热词 <span class="sub" id="scopeText"></span></h2>
+        <div class="hot" id="hot"></div>
+      </div>
+      <div class="card">
+        <h2>正在识别</h2>
+        <div class="row" style="margin-bottom:8px"><span class="muted">音量</span><div class="meter"><i id="level"></i></div></div>
+        <div class="partial" id="partial"></div>
+      </div>
+      <div class="card">
+        <h2>最近的句子</h2>
+        <div class="list" id="recent"></div>
+      </div>
+    </div>
+    <div class="grid" style="align-content:start">
+      <div class="card">
+        <h2>控制</h2>
+        <div class="grid" style="gap:8px">
+          <button class="btn primary" id="btnListen">开始监听</button>
+          <button class="btn" id="btnOverlay">隐藏悬浮条</button>
+          <button class="btn" id="btnNewSession">开始新课堂</button>
+          <button class="btn" id="btnClear">清空当前热词</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>统计范围</h2>
+        <select id="liveWindow">
+          <option value="5">最近 5 分钟</option><option value="10">最近 10 分钟</option>
+          <option value="30">最近 30 分钟</option><option value="0">本节课全部</option>
+        </select>
+      </div>
+      <div class="card">
+        <h2>数据</h2>
+        <div class="row" style="justify-content:space-around;text-align:center">
+          <div><div class="stat" id="sumSessions">0</div><div class="muted">节课</div></div>
+          <div><div class="stat" id="sumUtt">0</div><div class="muted">句话</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 课堂记录 -->
+<section class="page" id="page-records">
+  <div class="sessions">
+    <div class="card" style="padding:12px">
+      <h2 style="padding:0 6px">全部课堂</h2>
+      <div class="list" id="sessionList" style="max-height:640px"></div>
+    </div>
+    <div class="card" id="sessionDetail"><div class="empty">在左侧选择一节课</div></div>
+  </div>
+</section>
+
+<!-- 词库 -->
+<section class="page" id="page-dict">
+  <div class="grid g2">
+    <div class="grid">
+      <div class="card">
+        <h2>自定义词 <span class="sub">学科术语、同学名字等，让分词把它们当成一个整词。空格或换行分隔</span></h2>
+        <textarea id="customWords" placeholder="例如：光合作用 勾股定理 张小明"></textarea>
+        <div class="row" style="margin-top:10px"><button class="btn primary" data-save="customWords">保存自定义词</button></div>
+      </div>
+      <div class="card">
+        <h2>停用词 <span class="sub">这些词不会算进热词。修改后历史统计也会同步更新</span></h2>
+        <textarea id="stopwords" style="min-height:200px"></textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn primary" data-save="stopwords">保存停用词</button>
+          <button class="btn" id="btnStopDefault">恢复默认停用词</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="align-self:start">
+      <h2>分词测试</h2>
+      <textarea id="tokText" style="min-height:80px">今天我们来学习光合作用，光合作用需要阳光和叶绿体</textarea>
+      <div class="row" style="margin:10px 0"><button class="btn" id="btnTok">分词</button></div>
+      <div class="muted" style="font-size:12px">全部分词</div>
+      <div id="tokAll" style="margin-bottom:8px"></div>
+      <div class="muted" style="font-size:12px">计入热词</div>
+      <div class="hot" id="tokKept" style="min-height:0"></div>
+    </div>
+  </div>
+</section>
+
+<!-- 悬浮条 -->
+<section class="page" id="page-overlay">
+  <div class="card">
+    <h2>预览</h2>
+    <div class="preview" id="preview"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>悬浮条设置 <span class="sub">修改后立即生效</span></h2>
+    <div class="form" id="formOverlay"></div>
+    <div class="row" style="margin-top:16px">
+      <button class="btn" id="btnResetPos">位置恢复到屏幕顶部居中</button>
+    </div>
+  </div>
+</section>
+
+<!-- 识别与系统 -->
+<section class="page" id="page-settings">
+  <div class="card">
+    <h2>识别</h2>
+    <div class="form" id="formRecog"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>热词规则</h2>
+    <div class="form" id="formRules"></div>
+  </div>
+  <div class="card" style="margin-top:16px">
+    <h2>系统</h2>
+    <div class="form" id="formSystem"></div>
+    <div class="row" style="margin-top:16px"><button class="btn danger" id="btnReset">恢复全部默认设置</button></div>
+  </div>
+</section>
+
+<!-- 模型 -->
+<section class="page" id="page-model">
+  <div class="card">
+    <h2>语音模型</h2>
+    <p>当前模型目录：<code id="modelDir"></code> <span id="modelState"></span></p>
+    <p class="muted">识别完全在本机离线进行，声音不会上传。小模型适合普通电脑；大模型更准，但需要约 3GB 内存，加载较慢。</p>
+    <div id="modelList" class="grid" style="gap:10px"></div>
+    <div id="dl" style="display:none;margin-top:12px">
+      <div id="dlMsg"></div>
+      <div class="progress"><i id="dlBar"></i></div>
+    </div>
+  </div>
+</section>
+</main>
+<div id="toast"></div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let CFG = {}, DEFAULTS = {}, STATE = {}, currentSession = null, sessionTab = "words";
+
+async function api(path, opts = {}) {
+  const r = await fetch("/api/" + path, {
+    method: opts.method || (opts.body ? "POST" : "GET"),
+    headers: {"X-Token": TOKEN, "Content-Type": "application/json"},
+    body: opts.body ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+function toast(msg, err) {
+  const t = $("#toast"); t.textContent = msg; t.className = "show" + (err ? " err" : "");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.className = "", 1800);
+}
+async function saveConfig(changes, quiet) {
+  try {
+    const r = await api("config", {body: changes});
+    CFG = r.config;
+    if (!quiet) toast(r.changed.length ? "已保存" : "没有变化");
+    if ("hotkey" in changes && !r.hotkey_ok) toast("热键注册失败：可能格式不对或被其他程序占用", true);
+    renderForms(); renderPreview();
+  } catch (e) { toast(e.message, true); }
+}
+const fmtTime = ts => new Date(ts * 1000).toLocaleTimeString("zh-CN", {hour12: false});
+const fmtDate = ts => new Date(ts * 1000).toLocaleString("zh-CN", {hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit"});
+
+// ---------- 导航 ----------
+$("#nav").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#nav button").forEach(x => x.classList.toggle("active", x === b));
+  document.querySelectorAll(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + b.dataset.page));
+  location.hash = b.dataset.page;
+  if (b.dataset.page === "records") loadSessions();
+  if (b.dataset.page === "model") loadModels();
+};
+
+// ---------- 实时 ----------
+function hotHtml(list) {
+  return list.map(([w, n], i) => `<span class="${i < 3 ? "top" : ""}">${esc(w)}<b>×${n}</b></span>`).join("");
+}
+async function poll() {
+  try {
+    const s = STATE = await api("state");
+    $("#dot").className = "dot" + (s.listening ? " on" : s.error ? " err" : "");
+    $("#statusText").textContent = s.status;
+    $("#hot").innerHTML = s.top.length ? hotHtml(s.top) : `<span class="muted" style="background:none;font-weight:400">${s.listening ? "等待热词出现…（同一个词至少出现 " + CFG.min_count + " 次才会显示）" : esc(s.status)}</span>`;
+    $("#level").style.width = Math.round(s.level * 100) + "%";
+    $("#partial").textContent = s.partial || (s.listening ? "……" : "");
+    $("#recent").innerHTML = s.recent.length ? s.recent.map(u =>
+      `<div class="utt"><span class="t">${fmtTime(u.ts)}</span>${esc(u.text)}<div class="w">${u.words.map(esc).join(" · ")}</div></div>`).join("")
+      : `<div class="empty">还没有识别到内容</div>`;
+    $("#btnListen").textContent = s.listening ? "暂停监听" : "开始监听";
+    $("#btnListen").classList.toggle("primary", !s.listening);
+    $("#btnOverlay").textContent = s.overlay_visible ? "隐藏悬浮条" : "显示悬浮条";
+    $("#sumSessions").textContent = s.summary.sessions;
+    $("#sumUtt").textContent = s.summary.utterances;
+    $("#scopeText").textContent = CFG.window_minutes ? `最近 ${CFG.window_minutes} 分钟` : "本节课全部";
+    const alert = $("#alert");
+    if (s.error) { alert.style.display = "block"; alert.innerHTML = esc(s.status + "：" + s.error) + (s.model_ready ? "" : ' <a href="#model" onclick="document.querySelector(\'[data-page=model]\').click()">去下载模型</a>'); }
+    else alert.style.display = "none";
+    if (document.querySelector("#page-model.active")) renderDownload(s.download, s.model_ready);
+  } catch (e) {
+    $("#dot").className = "dot err"; $("#statusText").textContent = "程序未运行";
+  }
+}
+$("#btnListen").onclick = () => api("control/" + (STATE.listening ? "stop" : "start"), {body: {}}).then(() => setTimeout(poll, 300));
+$("#btnOverlay").onclick = () => api("control/toggle_overlay", {body: {}}).then(() => setTimeout(poll, 300));
+$("#btnClear").onclick = () => api("control/clear", {body: {}}).then(() => { toast("已清空"); poll(); });
+$("#btnNewSession").onclick = async () => {
+  const name = prompt("新课堂名称（可留空，自动用日期时间命名）", "");
+  if (name === null) return;
+  await api("control/new_session", {body: {name}}); toast("已开始新课堂"); poll();
+};
+$("#liveWindow").onchange = e => saveConfig({window_minutes: +e.target.value});
+
+// ---------- 课堂记录 ----------
+async function loadSessions() {
+  const {sessions, current} = await api("sessions");
+  $("#sessionList").innerHTML = sessions.map(s => `
+    <div class="sess ${s.id === currentSession ? "active" : ""}" data-id="${s.id}">
+      <div class="n">${esc(s.name)}${s.id === current ? '<span class="badge">进行中</span>' : ""}</div>
+      <div class="m">${fmtDate(s.started_at)} · ${s.utterance_count} 句</div>
+    </div>`).join("") || `<div class="empty">暂无记录</div>`;
+  if (!currentSession && sessions.length) selectSession(sessions[0].id);
+}
+$("#sessionList").onclick = e => { const el = e.target.closest(".sess"); if (el) selectSession(+el.dataset.id); };
+
+async function selectSession(id) {
+  currentSession = id;
+  document.querySelectorAll(".sess").forEach(el => el.classList.toggle("active", +el.dataset.id === id));
+  const {sessions, current} = await api("sessions");
+  const s = sessions.find(x => x.id === id);
+  if (!s) { $("#sessionDetail").innerHTML = `<div class="empty">在左侧选择一节课</div>`; return; }
+  $("#sessionDetail").innerHTML = `
+    <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <div><h2 style="margin:0">${esc(s.name)}</h2>
+        <div class="muted" style="font-size:12px">${fmtDate(s.started_at)} 开始${s.ended_at ? " · " + fmtDate(s.ended_at) + " 结束" : ""} · ${s.utterance_count} 句</div></div>
+      <div class="row">
+        <button class="btn" id="sRename">重命名</button>
+        <button class="btn" id="sExport">导出 CSV</button>
+        <button class="btn danger" id="sDelete" ${id === current ? "disabled title='正在进行的课堂不能删除'" : ""}>删除</button>
+      </div>
+    </div>
+    <div class="tabs2"><button data-t="words">热词排行</button><button data-t="utts">全部句子</button></div>
+    <div id="sBody"></div>`;
+  $("#sRename").onclick = async () => {
+    const name = prompt("课堂名称", s.name); if (!name) return;
+    await api(`sessions/${id}/rename`, {body: {name}}); toast("已重命名"); loadSessions(); selectSession(id);
+  };
+  $("#sExport").onclick = () => location.href = `/api/sessions/${id}/export?token=${TOKEN}`;
+  $("#sDelete").onclick = async () => {
+    if (!confirm(`确定删除「${s.name}」及其全部 ${s.utterance_count} 句记录？此操作不可恢复。`)) return;
+    try { await api(`sessions/${id}`, {method: "DELETE"}); currentSession = null; toast("已删除"); loadSessions(); }
+    catch (e) { toast(e.message, true); }
+  };
+  document.querySelector(".tabs2").onclick = e => { const b = e.target.closest("button"); if (b) { sessionTab = b.dataset.t; renderSessionBody(id); } };
+  renderSessionBody(id);
+}
+
+async function renderSessionBody(id) {
+  document.querySelectorAll(".tabs2 button").forEach(b => b.classList.toggle("active", b.dataset.t === sessionTab));
+  const body = $("#sBody");
+  if (sessionTab === "words") {
+    const words = await api(`sessions/${id}/words?limit=50`);
+    if (!words.length) { body.innerHTML = `<div class="empty">这节课还没有热词</div>`; return; }
+    const max = words[0].count;
+    body.innerHTML = `<div class="muted" style="font-size:12px;margin-bottom:6px">点击一个词查看它在课上随时间的出现次数</div>
+      <div id="tl"></div>
+      <div class="bars">${words.map(w => `<div class="bar" data-w="${esc(w.word)}"><span class="lbl">${esc(w.word)}</span>
+        <span class="track"><i style="width:${w.count / max * 100}%"></i></span><span class="num">${w.count}</span></div>`).join("")}</div>`;
+    body.querySelector(".bars").onclick = e => { const b = e.target.closest(".bar"); if (b) showTimeline(id, b.dataset.w); };
+  } else {
+    body.innerHTML = `<div class="row" style="margin-bottom:10px"><input type="text" id="uq" placeholder="搜索句子…" style="max-width:300px"></div><div class="list" id="ulist" style="max-height:560px"></div>`;
+    const load = async () => {
+      const list = await api(`sessions/${id}/utterances?q=${encodeURIComponent($("#uq").value)}`);
+      $("#ulist").innerHTML = list.map(u => `<div class="utt"><span class="del" data-id="${u.id}">删除</span><span class="t">${fmtTime(u.ts)}</span>${esc(u.text)}</div>`).join("") || `<div class="empty">没有句子</div>`;
+    };
+    $("#uq").oninput = () => { clearTimeout(load.h); load.h = setTimeout(load, 250); };
+    $("#ulist").onclick = async e => {
+      const d = e.target.closest(".del"); if (!d) return;
+      await api(`utterances/${d.dataset.id}`, {method: "DELETE"}); load();
+    };
+    load();
+  }
+}
+
+async function showTimeline(id, word) {
+  const data = await api(`sessions/${id}/timeline?word=${encodeURIComponent(word)}&bucket=5`);
+  const el = $("#tl");
+  if (!data.length) { el.innerHTML = ""; return; }
+  const W = 600, H = 110, max = Math.max(...data.map(d => d.count)), bw = W / data.length;
+  el.innerHTML = `<div class="card" style="margin-bottom:12px;padding:12px"><div><b>${esc(word)}</b> <span class="muted">每 5 分钟出现次数</span></div>
+    <svg class="tl" viewBox="0 0 ${W} ${H + 16}" preserveAspectRatio="none">
+    ${data.map((d, i) => { const h = d.count / max * H; return `<rect x="${i * bw + 2}" y="${H - h}" width="${Math.max(1, bw - 4)}" height="${h}" rx="2" fill="var(--primary)"><title>第 ${d.minute}~${d.minute + 5} 分钟：${d.count} 次</title></rect>`; }).join("")}
+    ${data.map((d, i) => i % Math.ceil(data.length / 8) === 0 ? `<text x="${i * bw + 2}" y="${H + 13}" font-size="10" fill="var(--muted)">${d.minute}′</text>` : "").join("")}
+    </svg></div>`;
+}
+
+// ---------- 词库 ----------
+document.querySelectorAll("[data-save]").forEach(b => b.onclick = () => {
+  const key = b.dataset.save === "customWords" ? "custom_words" : "stopwords";
+  saveConfig({[key]: $("#" + b.dataset.save).value.split(/\s+/).filter(Boolean)});
+});
+$("#btnStopDefault").onclick = () => { if (confirm("恢复默认停用词？")) saveConfig({stopwords: DEFAULTS.stopwords}); };
+$("#btnTok").onclick = async () => {
+  const r = await api("tokenize", {body: {text: $("#tokText").value}});
+  $("#tokAll").textContent = r.tokens.join(" / ");
+  $("#tokKept").innerHTML = r.kept.map(w => `<span>${esc(w)}</span>`).join("") || `<span class="muted" style="background:none">（无）</span>`;
+};
+
+// ---------- 表单 ----------
+const FIELDS = {
+  formOverlay: [
+    ["overlay_visible", "显示悬浮条", "bool"],
+    ["top_n", "显示词数", "range", {min: 1, max: 20}],
+    ["alpha", "透明度", "range", {min: 0.2, max: 1, step: 0.05, pct: true}],
+    ["width", "宽度（像素）", "number", {min: 200, max: 3000}],
+    ["height", "高度（像素）", "number", {min: 24, max: 300}],
+    ["font_size", "字号", "range", {min: 8, max: 48}],
+    ["font_family", "字体", "select", {options: ["Microsoft YaHei UI", "微软雅黑", "黑体", "楷体", "宋体", "等线", "Segoe UI"]}],
+    ["bg_color", "背景颜色", "color"],
+    ["fg_color", "文字颜色", "color"],
+    ["accent_color", "前三名颜色", "color"],
+    ["show_count", "显示次数", "bool"],
+    ["show_partial", "显示正在识别的句子", "bool"],
+    ["click_through", "鼠标穿透（锁定）", "bool", {hint: "开启后鼠标可以点到悬浮条下面的窗口，悬浮条不能拖动。在托盘菜单里关闭"}],
+  ],
+  formRecog: [
+    ["device", "麦克风", "device"],
+    ["start_listening", "启动后自动开始监听", "bool"],
+    ["model_dir", "模型目录", "text", {hint: "留空使用程序目录下的 model 文件夹", placeholder: "默认"}],
+  ],
+  formRules: [
+    ["window_minutes", "统计范围", "select", {options: [[5, "最近 5 分钟"], [10, "最近 10 分钟"], [15, "最近 15 分钟"], [30, "最近 30 分钟"], [60, "最近 60 分钟"], [0, "本节课全部"]]}],
+    ["min_count", "至少出现几次才显示", "number", {min: 1, max: 100}],
+    ["min_word_len", "最短词长（字）", "number", {min: 1, max: 6, hint: "设为 1 会把单字也算进去，通常保持 2"}],
+  ],
+  formSystem: [
+    ["hotkey", "显示/隐藏悬浮条热键", "text", {hint: "例如 Ctrl+Alt+H、Ctrl+Shift+F9"}],
+    ["autostart", "开机自动启动", "bool"],
+    ["open_admin_on_start", "启动时打开管理页", "bool"],
+    ["web_port", "管理页端口", "number", {min: 1024, max: 65535, hint: "重启程序后生效"}],
+  ],
+};
+let DEVICES = [];
+
+function fieldHtml([key, label, type, o = {}]) {
+  const v = CFG[key];
+  let input;
+  if (type === "bool") input = `<input type="checkbox" data-k="${key}" ${v ? "checked" : ""}>`;
+  else if (type === "range") input = `<div class="inline"><input type="range" data-k="${key}" min="${o.min}" max="${o.max}" step="${o.step || 1}" value="${v}"><span style="min-width:44px">${o.pct ? Math.round(v * 100) + "%" : v}</span></div>`;
+  else if (type === "color") input = `<div class="inline"><input type="color" data-k="${key}" value="${v}"><span class="muted">${v}</span></div>`;
+  else if (type === "number") input = `<input type="number" data-k="${key}" min="${o.min}" max="${o.max}" value="${v}" style="max-width:160px">`;
+  else if (type === "select") {
+    const opts = o.options.map(x => Array.isArray(x) ? x : [x, x]);
+    if (!opts.some(([val]) => String(val) === String(v))) opts.unshift([v, v]);
+    input = `<select data-k="${key}" style="max-width:260px">${opts.map(([val, t]) => `<option value="${esc(val)}" ${String(val) === String(v) ? "selected" : ""}>${esc(t)}</option>`).join("")}</select>`;
+  } else if (type === "device") {
+    input = `<div class="inline"><select data-k="${key}" style="max-width:420px"><option value="">系统默认</option>${DEVICES.map(d => `<option value="${d.id}" ${v === d.id ? "selected" : ""}>${esc(d.name)} (${esc(d.api)})</option>`).join("")}</select><button class="btn" type="button" onclick="loadDevices()">刷新</button></div>`;
+  } else input = `<input type="text" data-k="${key}" value="${esc(v ?? "")}" placeholder="${esc(o.placeholder || "")}" style="max-width:420px">`;
+  return `<label>${label}</label><div>${input}</div>${o.hint ? `<div class="hint">${o.hint}</div>` : ""}`;
+}
+function renderForms() {
+  for (const [id, fields] of Object.entries(FIELDS)) {
+    const form = document.getElementById(id);
+    if (form.contains(document.activeElement) && document.activeElement.type === "text") continue;
+    form.innerHTML = fields.map(fieldHtml).join("");
+  }
+  if (document.activeElement?.id !== "customWords") $("#customWords").value = (CFG.custom_words || []).join(" ");
+  if (document.activeElement?.id !== "stopwords") $("#stopwords").value = (CFG.stopwords || []).join(" ");
+  $("#liveWindow").value = String(CFG.window_minutes);
+}
+document.addEventListener("change", e => {
+  const el = e.target, key = el.dataset?.k; if (!key) return;
+  let v = el.type === "checkbox" ? el.checked : el.value;
+  if (el.type === "number" || el.type === "range") v = +v;
+  if (key === "device") v = v === "" ? null : +v;
+  if (key === "window_minutes") v = +v;
+  saveConfig({[key]: v});
+});
+document.addEventListener("input", e => {
+  const el = e.target;
+  if (el.dataset?.k && (el.type === "range" || el.type === "color")) {
+    const span = el.nextElementSibling;
+    if (span) span.textContent = el.type === "color" ? el.value : (el.max <= 1 ? Math.round(el.value * 100) + "%" : el.value);
+    CFG[el.dataset.k] = el.type === "range" ? +el.value : el.value;
+    renderPreview();
+  }
+});
+function renderPreview() {
+  const p = $("#preview"); if (!p) return;
+  const c = CFG, words = [["光合作用", 9], ["叶绿体", 6], ["二氧化碳", 5], ["阳光", 4], ["实验", 3], ["氧气", 3], ["植物", 2], ["淀粉", 2]].slice(0, c.top_n);
+  p.style.cssText = `background:${c.bg_color};opacity:${c.alpha};width:min(100%,${c.width}px);height:${c.height}px;font-family:'${c.font_family}';font-size:${c.font_size}px`;
+  p.innerHTML = words.map(([w, n], i) => `<b style="color:${i < 3 ? c.accent_color : c.fg_color};white-space:nowrap">${w}${c.show_count ? "×" + n : ""}</b>`).join("");
+}
+$("#btnResetPos").onclick = () => saveConfig({x: null, y: null});
+$("#btnReset").onclick = async () => {
+  if (!confirm("恢复全部默认设置？（课堂记录不受影响）")) return;
+  const r = await api("reset", {body: {}}); CFG = r.config; renderForms(); renderPreview(); toast("已恢复默认");
+};
+async function loadDevices() { DEVICES = await api("devices"); renderForms(); }
+
+// ---------- 模型 ----------
+async function loadModels() {
+  const m = await api("models");
+  $("#modelDir").textContent = m.dir;
+  $("#modelList").innerHTML = Object.entries(m.models).map(([k, x]) => `
+    <div class="row" style="justify-content:space-between;border:1px solid var(--line);border-radius:8px;padding:10px 14px">
+      <div><b>${esc(x.name)}</b> <span class="muted">${x.size}</span></div>
+      <button class="btn" data-dl="${k}">${m.ready ? "下载并替换" : "下载安装"}</button></div>`).join("");
+  document.querySelectorAll("[data-dl]").forEach(b => b.onclick = async () => {
+    if (m.ready && !confirm("将替换当前已安装的模型，确定？")) return;
+    try { await api("models/" + b.dataset.dl, {body: {}}); toast("开始下载"); } catch (e) { toast(e.message, true); }
+  });
+  renderDownload(m.download, m.ready);
+}
+function renderDownload(d, ready) {
+  $("#modelState").innerHTML = ready ? '<span style="color:var(--ok)">✔ 已安装</span>' : '<span style="color:var(--danger)">✘ 未安装</span>';
+  $("#dl").style.display = d.state === "idle" ? "none" : "block";
+  $("#dlMsg").textContent = d.message + (d.state === "running" && d.progress ? `  ${d.progress}%` : "");
+  $("#dlBar").style.width = d.progress + "%";
+  document.querySelectorAll("[data-dl]").forEach(b => b.disabled = d.state === "running");
+}
+
+// ---------- 启动 ----------
+(async () => {
+  const c = await api("config"); CFG = c.config; DEFAULTS = c.defaults;
+  await loadDevices().catch(() => {});
+  renderForms(); renderPreview();
+  const page = location.hash.slice(1);
+  if (page) document.querySelector(`[data-page="${page}"]`)?.click();
+  poll(); setInterval(poll, 1000);
+})();
+</script>
+</body>
+</html>
