@@ -234,8 +234,7 @@ svg.tl{width:100%;height:120px}
 <section class="page" id="page-model">
   <div class="card">
     <h2>语音模型</h2>
-    <p>当前模型目录：<code id="modelDir"></code> <span id="modelState"></span></p>
-    <p class="muted">识别完全在本机离线进行，声音不会上传。小模型适合普通电脑；大模型更准，但需要约 3GB 内存，加载较慢。</p>
+    <p class="muted">识别完全在本机离线进行，声音不会上传。推荐 SenseVoice：准确率高、速度快。模型保存在 <code id="modelDir"></code></p>
     <div id="modelList" class="grid" style="gap:10px"></div>
     <div id="dl" style="display:none;margin-top:12px">
       <div id="dlMsg"></div>
@@ -312,7 +311,7 @@ async function poll() {
     const alert = $("#alert");
     if (s.error) { alert.style.display = "block"; alert.innerHTML = esc(s.status + "：" + s.error) + (s.model_ready ? "" : ' <a href="#model" onclick="document.querySelector(\'[data-page=model]\').click()">去下载模型</a>'); }
     else alert.style.display = "none";
-    if (document.querySelector("#page-model.active")) renderDownload(s.download, s.model_ready);
+    if (document.querySelector("#page-model.active")) renderDownload(s.download);
   } catch (e) {
     $("#dot").className = "dot err"; $("#statusText").textContent = "程序未运行";
   }
@@ -442,7 +441,8 @@ const FIELDS = {
   formRecog: [
     ["device", "麦克风", "device"],
     ["start_listening", "启动后自动开始监听", "bool"],
-    ["model_dir", "模型目录", "text", {hint: "留空使用程序目录下的 model 文件夹", placeholder: "默认"}],
+    ["language", "识别语言（SenseVoice）", "select", {options: [["zh", "中文"], ["auto", "自动识别（中英粤日韩）"]], hint: "课堂上主要说普通话时选「中文」更稳定"}],
+    ["models_dir", "模型存放目录", "text", {hint: "留空使用程序目录下的 models 文件夹", placeholder: "默认"}],
   ],
   formRules: [
     ["window_minutes", "统计范围", "select", {options: [[5, "最近 5 分钟"], [10, "最近 10 分钟"], [15, "最近 15 分钟"], [30, "最近 30 分钟"], [60, "最近 60 分钟"], [0, "本节课全部"]]}],
@@ -518,18 +518,37 @@ async function loadDevices() { DEVICES = await api("devices"); renderForms(); }
 async function loadModels() {
   const m = await api("models");
   $("#modelDir").textContent = m.dir;
-  $("#modelList").innerHTML = Object.entries(m.models).map(([k, x]) => `
-    <div class="row" style="justify-content:space-between;border:1px solid var(--line);border-radius:8px;padding:10px 14px">
-      <div><b>${esc(x.name)}</b> <span class="muted">${x.size}</span></div>
-      <button class="btn" data-dl="${k}">${m.ready ? "下载并替换" : "下载安装"}</button></div>`).join("");
-  document.querySelectorAll("[data-dl]").forEach(b => b.onclick = async () => {
-    if (m.ready && !confirm("将替换当前已安装的模型，确定？")) return;
-    try { await api("models/" + b.dataset.dl, {body: {}}); toast("开始下载"); } catch (e) { toast(e.message, true); }
+  $("#modelList").innerHTML = m.models.map(x => `
+    <div class="row" style="justify-content:space-between;border:1px solid ${x.active ? "var(--primary)" : "var(--line)"};border-radius:8px;padding:12px 14px">
+      <div style="flex:1;min-width:240px">
+        <div><b>${esc(x.name)}</b> <span class="muted">${x.size}</span>
+          ${x.active ? '<span class="badge" style="background:var(--primary)">使用中</span>' : ""}
+          ${x.installed ? '<span class="badge">已安装</span>' : ""}</div>
+        <div class="muted" style="font-size:12px">${esc(x.desc)}</div>
+      </div>
+      <div class="row">
+        ${x.installed && !x.active ? `<button class="btn primary" data-use="${x.key}">使用</button>` : ""}
+        <button class="btn" data-dl="${x.key}">${x.installed ? "重新下载" : "下载安装"}</button>
+        ${x.installed && !x.active ? `<button class="btn danger" data-del="${x.key}">删除</button>` : ""}
+      </div></div>`).join("");
+  const act = (sel, fn) => document.querySelectorAll(sel).forEach(b => b.onclick = async () => {
+    try { await fn(b); loadModels(); } catch (e) { if (e.message !== "已取消") toast(e.message, true); }
   });
-  renderDownload(m.download, m.ready);
+  act("[data-dl]", async b => {
+    const x = m.models.find(x => x.key === b.dataset.dl);
+    if (x.installed && !confirm("重新下载并覆盖这个模型？")) throw new Error("已取消");
+    await api(`models/${x.key}/download`, {body: {}}); toast("开始下载");
+  });
+  act("[data-use]", async b => { await api(`models/${b.dataset.use}/use`, {body: {}}); toast("已切换模型"); });
+  act("[data-del]", async b => {
+    if (!confirm("删除这个模型的文件？")) throw new Error("已取消");
+    await api(`models/${b.dataset.del}`, {method: "DELETE"}); toast("已删除");
+  });
+  renderDownload(m.download);
 }
-function renderDownload(d, ready) {
-  $("#modelState").innerHTML = ready ? '<span style="color:var(--ok)">✔ 已安装</span>' : '<span style="color:var(--danger)">✘ 未安装</span>';
+function renderDownload(d) {
+  if (renderDownload.last === "running" && d.state !== "running") setTimeout(loadModels, 300);
+  renderDownload.last = d.state;
   $("#dl").style.display = d.state === "idle" ? "none" : "block";
   $("#dlMsg").textContent = d.message + (d.state === "running" && d.progress ? `  ${d.progress}%` : "");
   $("#dlBar").style.width = d.progress + "%";

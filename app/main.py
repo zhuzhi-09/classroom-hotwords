@@ -95,6 +95,16 @@ class App:
     def new_session(self, name=None):
         return self.engine.new_session(name)
 
+    def download_model(self, key):
+        return self.engine.download_model(key, on_done=self._on_model_installed)
+
+    def _on_model_installed(self, key):
+        """下载完成：当前没有可用模型时自动切到新模型，然后按设置开始监听。"""
+        if key == self.cfg["asr_model"] or not self.engine.model_ready():
+            self.cfg.update({"asr_model": key})
+        if self.cfg["start_listening"] or self.engine.error:
+            self.engine.restart()
+
     def open_admin(self):
         webbrowser.open(self.web.url)
 
@@ -105,7 +115,7 @@ class App:
             return []
         if changed & DICT_KEYS:
             self.engine.reload_dictionary()
-        if changed & {"device", "model_dir"} and (self.engine.listening or self.engine.error):
+        if changed & {"device", "asr_model", "models_dir", "language"} and (self.engine.listening or self.engine.error):
             threading.Thread(target=self.engine.restart, daemon=True).start()
         if "hotkey" in changed:
             self._register_hotkey()

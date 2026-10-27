@@ -134,12 +134,26 @@ class Handler(BaseHTTPRequestHandler):
         if route == ("GET", "devices", 1):
             return engine_mod.list_input_devices()
         if route == ("GET", "models", 1):
-            return {"models": engine_mod.MODELS, "download": eng.download,
-                    "ready": engine_mod.model_ready(app.cfg.model_dir()), "dir": app.cfg.model_dir()}
-        if route == ("POST", "models", 2):
-            if not eng.download_model(p[1]):
-                raise ApiError("已有下载任务在进行，或模型名称无效")
-            return {"ok": True}
+            return {"models": eng.models(), "download": eng.download, "dir": app.cfg.models_dir()}
+        if p and p[0] == "models" and len(p) >= 2:
+            key, action = p[1], (p[2] if len(p) > 2 else "")
+            if key not in engine_mod.MODELS:
+                raise ApiError("模型名称无效", 404)
+            if method == "POST" and action == "download":
+                if not app.download_model(key):
+                    raise ApiError("已有下载任务在进行")
+                return {"ok": True}
+            if method == "POST" and action == "use":
+                if not eng.model_ready(key):
+                    raise ApiError("这个模型还没有安装")
+                app.apply_config({"asr_model": key})  # 正在监听或出错时会自动重启引擎
+                return {"ok": True}
+            if method == "DELETE" and not action:
+                try:
+                    eng.delete_model(key)
+                except ValueError as e:
+                    raise ApiError(str(e))
+                return {"ok": True}
 
         if route == ("POST", "control", 2):
             action = p[1]

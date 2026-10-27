@@ -1,10 +1,10 @@
-"""识别引擎：麦克风 -> Vosk -> jieba -> 存储 + 实时热词统计。"""
+"""识别引擎：麦克风 -> 识别后端(SenseVoice / Vosk) -> jieba -> 存储 + 实时热词统计。"""
 import array
-import json
 import math
 import os
 import queue
 import shutil
+import tarfile
 import threading
 import time
 import urllib.request
@@ -13,16 +13,33 @@ from collections import Counter, deque
 
 import jieba
 import sounddevice as sd
-from vosk import KaldiRecognizer, Model, SetLogLevel
 
-SetLogLevel(-1)
+from .backends import SenseVoiceBackend, VoskBackend
+from .config import LEGACY_VOSK_DIR
 
+GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
 MODELS = {
-    "small": {"name": "中文小模型 vosk-model-small-cn-0.22", "size": "42MB",
-              "url": "https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"},
-    "large": {"name": "中文大模型 vosk-model-cn-0.22（更准，占内存约 3GB）", "size": "1.3GB",
-              "url": "https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip"},
+    "sensevoice": {
+        "name": "SenseVoice-Small（推荐）", "engine": "sensevoice", "size": "160MB",
+        "desc": "阿里 FunASR 出品，中文准确率高、速度快，抗噪声能力强。说完一句识别一句",
+        "files": ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"],
+        "downloads": [GH + "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2",
+                      GH + "silero_vad.onnx"],
+    },
+    "vosk-small": {
+        "name": "Vosk 中文小模型", "engine": "vosk", "size": "42MB",
+        "desc": "最轻，可以边说边出字，但准确率明显不如 SenseVoice",
+        "files": ["conf/model.conf"],
+        "downloads": ["https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"],
+    },
+    "vosk-large": {
+        "name": "Vosk 中文大模型", "engine": "vosk", "size": "1.3GB",
+        "desc": "比 Vosk 小模型准，但占内存约 3GB、加载慢",
+        "files": ["conf/model.conf"],
+        "downloads": ["https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip"],
+    },
 }
+SAMPLE_RATE = 16000
 
 
 def list_input_devices():
@@ -39,16 +56,12 @@ def list_input_devices():
     return out
 
 
-def model_ready(path):
-    return os.path.isdir(os.path.join(path, "am")) or os.path.isfile(os.path.join(path, "conf", "model.conf"))
-
-
 class Engine:
     def __init__(self, config, storage):
         self.cfg = config
         self.storage = storage
-        self.model = None
-        self.loaded_model_dir = None
+        self.backend = None
+        self.backend_key = None
         self.thread = None
         self.stop_flag = threading.Event()
         self.listening = False
@@ -60,8 +73,48 @@ class Engine:
         self.events = deque()           # (ts, token) 本节课，用于时间窗口统计
         self.lock = threading.Lock()
         self.session_id = None
-        self.download = {"state": "idle", "progress": 0, "message": ""}
+        self.download = {"state": "idle", "progress": 0, "message": "", "model": None}
         self.reload_dictionary()
+
+    # ---------- 模型 ----------
+    def model_path(self, key):
+        path = os.path.join(self.cfg.models_dir(), key)
+        if key == "vosk-small" and not self._has_files(key, path) and self._has_files(key, LEGACY_VOSK_DIR):
+            return LEGACY_VOSK_DIR
+        return path
+
+    @staticmethod
+    def _has_files(key, path):
+        return all(os.path.isfile(os.path.join(path, f)) for f in MODELS[key]["files"])
+
+    def model_ready(self, key=None):
+        key = key or self.cfg["asr_model"]
+        return key in MODELS and self._has_files(key, self.model_path(key))
+
+    def models(self):
+        active = self.cfg["asr_model"]
+        return [dict(key=k, active=k == active, installed=self.model_ready(k), path=self.model_path(k),
+                     **{f: m[f] for f in ("name", "engine", "size", "desc")})
+                for k, m in MODELS.items()]
+
+    def _load_backend(self):
+        key = self.cfg["asr_model"]
+        lang = self.cfg["language"]
+        if self.backend is not None and self.backend_key == (key, lang):
+            return True
+        if key not in MODELS or not self.model_ready(key):
+            self.status = "未安装语音模型"
+            self.error = "请在管理页「语音模型」中下载并选用一个模型"
+            return False
+        self.status = "加载模型中…"
+        self.backend = None
+        path = self.model_path(key)
+        if MODELS[key]["engine"] == "sensevoice":
+            self.backend = SenseVoiceBackend(path, SAMPLE_RATE, lang)
+        else:
+            self.backend = VoskBackend(path, SAMPLE_RATE)
+        self.backend_key = (key, lang)
+        return True
 
     # ---------- 分词 ----------
     def reload_dictionary(self):
@@ -115,7 +168,7 @@ class Engine:
     def stop(self):
         self.stop_flag.set()
         if self.thread:
-            self.thread.join(timeout=3)
+            self.thread.join(timeout=5)
         self.listening = False
         self.partial = ""
         self.level = 0.0
@@ -126,38 +179,26 @@ class Engine:
         self.stop()
         self.start()
 
-    def _load_model(self):
-        path = self.cfg.model_dir()
-        if self.model is not None and self.loaded_model_dir == path:
-            return True
-        if not model_ready(path):
-            self.status = "未安装语音模型"
-            self.error = "请在管理页「模型」中下载模型，或在设置里指定模型目录"
-            return False
-        self.status = "加载模型中…"
-        self.model = Model(path)
-        self.loaded_model_dir = path
-        return True
-
     def _run(self):
         self.error = ""
         try:
-            if not self._load_model():
+            if not self._load_backend():
                 return
-            audio_q = queue.Queue(maxsize=200)
+            audio_q = queue.Queue(maxsize=400)
 
             def callback(indata, frames, t, status):
                 samples = array.array("h", bytes(indata))
                 if samples:
-                    rms = math.sqrt(sum(s * s for s in samples[::8]) / len(samples[::8]))
-                    self.level = min(1.0, rms / 6000)
+                    sub = samples[::8]
+                    self.level = min(1.0, math.sqrt(sum(s * s for s in sub) / len(sub)) / 6000)
                 try:
                     audio_q.put_nowait(bytes(indata))
                 except queue.Full:
                     pass
 
-            rec = KaldiRecognizer(self.model, 16000)
-            with sd.RawInputStream(samplerate=16000, blocksize=4000, dtype="int16", channels=1,
+            backend = self.backend
+            backend.reset()
+            with sd.RawInputStream(samplerate=SAMPLE_RATE, blocksize=1600, dtype="int16", channels=1,
                                    device=self.cfg["device"], callback=callback):
                 self.listening = True
                 self.status = "监听中"
@@ -166,15 +207,10 @@ class Engine:
                         data = audio_q.get(timeout=0.3)
                     except queue.Empty:
                         continue
-                    if rec.AcceptWaveform(data):
-                        text = json.loads(rec.Result()).get("text", "").replace(" ", "")
-                        self.partial = ""
-                        if text:
-                            self._handle_text(text)
-                    else:
-                        self.partial = json.loads(rec.PartialResult()).get("partial", "").replace(" ", "")
-                text = json.loads(rec.FinalResult()).get("text", "").replace(" ", "")
-                if text:
+                    for text in backend.accept(data):
+                        self._handle_text(text)
+                    self.partial = backend.partial
+                for text in backend.flush():
                     self._handle_text(text)
         except Exception as e:
             self.status = "出错"
@@ -183,6 +219,9 @@ class Engine:
             self.listening = False
 
     def _handle_text(self, text):
+        text = text.strip()
+        if not text:
+            return
         tokens = self.segment(text)
         now = time.time()
         if self.session_id is None:
@@ -200,52 +239,83 @@ class Engine:
     def state(self):
         with self.lock:
             recent = list(self.recent)[:20]
+        key = self.cfg["asr_model"]
         return {"listening": self.listening, "status": self.status, "error": self.error,
                 "partial": self.partial, "level": round(self.level, 3),
-                "session_id": self.session_id, "recent": recent,
-                "top": self.top_words(), "model_ready": model_ready(self.cfg.model_dir()),
-                "model_dir": self.cfg.model_dir()}
+                "session_id": self.session_id, "recent": recent, "top": self.top_words(),
+                "model_ready": self.model_ready(), "model_name": MODELS.get(key, {}).get("name", key)}
 
-    # ---------- 模型下载 ----------
-    def download_model(self, key):
+    # ---------- 模型下载 / 删除 ----------
+    def download_model(self, key, on_done=None):
         if self.download["state"] == "running" or key not in MODELS:
             return False
-        threading.Thread(target=self._download, args=(key,), daemon=True).start()
+        threading.Thread(target=self._download, args=(key, on_done), daemon=True).start()
         return True
 
-    def _download(self, key):
+    def _download(self, key, on_done):
         info = MODELS[key]
-        target = self.cfg.model_dir()
-        tmp_zip = target.rstrip("\\/") + ".download.zip"
-        tmp_dir = target.rstrip("\\/") + ".extract"
+        target = os.path.join(self.cfg.models_dir(), key)
+        work = target + ".download"
         d = self.download
-        d.update(state="running", progress=0, message="下载中：" + info["name"])
+        d.update(state="running", progress=0, message="下载中：" + info["name"], model=key)
         try:
-            with urllib.request.urlopen(info["url"], timeout=30) as r, open(tmp_zip, "wb") as f:
-                total = int(r.headers.get("Content-Length") or 0)
-                done = 0
-                while chunk := r.read(1 << 16):
-                    f.write(chunk)
-                    done += len(chunk)
-                    if total:
-                        d["progress"] = round(done * 100 / total, 1)
-            d["message"] = "解压中…"
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            with zipfile.ZipFile(tmp_zip) as z:
-                z.extractall(tmp_dir)
-            inner = [os.path.join(tmp_dir, n) for n in os.listdir(tmp_dir)]
-            src = inner[0] if len(inner) == 1 and os.path.isdir(inner[0]) else tmp_dir
-            was_listening = self.listening
-            self.stop()
-            self.model = None
+            shutil.rmtree(work, ignore_errors=True)
+            os.makedirs(work)
+            urls = info["downloads"]
+            for i, url in enumerate(urls):
+                fname = os.path.join(work, url.rsplit("/", 1)[-1])
+                with urllib.request.urlopen(url, timeout=30) as r, open(fname, "wb") as f:
+                    total = int(r.headers.get("Content-Length") or 0)
+                    done = 0
+                    while chunk := r.read(1 << 16):
+                        f.write(chunk)
+                        done += len(chunk)
+                        if total:
+                            d["progress"] = round((i + done / total) * 100 / len(urls), 1)
+                if fname.endswith((".zip", ".tar.bz2")):
+                    d["message"] = "解压中…"
+                    self._extract(fname, work)
+                    os.remove(fname)
+                    d["message"] = "下载中：" + info["name"]
+            if not self._has_files(key, work):
+                raise RuntimeError("下载的文件不完整")
+            if self.backend_key and self.backend_key[0] == key:
+                self.stop()
+                self.backend = self.backend_key = None
             shutil.rmtree(target, ignore_errors=True)
-            shutil.move(src, target)
-            d.update(state="done", progress=100, message="模型已安装")
-            if was_listening or self.cfg["start_listening"]:
-                self.start()
+            os.replace(work, target)
+            d.update(state="done", progress=100, message=info["name"] + " 已安装")
+            if on_done:
+                on_done(key)
         except Exception as e:
             d.update(state="error", message=f"下载失败：{e}")
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-            if os.path.exists(tmp_zip):
-                os.remove(tmp_zip)
+            shutil.rmtree(work, ignore_errors=True)
+
+    @staticmethod
+    def _extract(archive, dest):
+        """解压到 dest；压缩包里只有一层目录时把里面的内容提上来。"""
+        tmp = archive + ".x"
+        if archive.endswith(".zip"):
+            with zipfile.ZipFile(archive) as z:
+                z.extractall(tmp)
+        else:
+            with tarfile.open(archive, "r:bz2") as t:
+                t.extractall(tmp, filter="data")
+        entries = os.listdir(tmp)
+        src = os.path.join(tmp, entries[0]) if len(entries) == 1 and os.path.isdir(os.path.join(tmp, entries[0])) else tmp
+        for name in os.listdir(src):
+            if name == "test_wavs" or name.endswith(".onnx") and name.startswith("model.") and "int8" not in name:
+                continue  # 示例音频和非量化模型用不到
+            shutil.move(os.path.join(src, name), os.path.join(dest, name))
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    def delete_model(self, key):
+        if key not in MODELS:
+            raise ValueError("模型名称无效")
+        if key == self.cfg["asr_model"]:
+            raise ValueError("不能删除正在使用的模型，请先切换到其他模型")
+        path = self.model_path(key)
+        if self.backend_key and self.backend_key[0] == key:
+            self.backend = self.backend_key = None
+        shutil.rmtree(path, ignore_errors=True)

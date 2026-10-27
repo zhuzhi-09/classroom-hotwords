@@ -2,10 +2,11 @@
 
 **把课堂上大家说得最多的词，实时显示在屏幕顶部。**
 
-程序监听教室里的麦克风，在本机离线识别同学说的话，用 jieba 分词，统计最近一段时间里出现得最多的词，显示在屏幕顶部的半透明悬浮条上。平时缩在托盘里运行；设置、课堂记录、词库都在浏览器里的本地管理页中管理。
+程序监听教室里的麦克风，用 SenseVoice 模型在本机离线识别同学说的话，用 jieba 分词，统计最近一段时间里出现得最多的词，显示在屏幕顶部的半透明悬浮条上。平时缩在托盘里运行；设置、课堂记录、词库都在浏览器里的本地管理页中管理。
 
 ![悬浮条](docs/overlay.png)
 
+- 🎯 **识别准**：默认使用阿里 FunASR 的 SenseVoice-Small，在我们的测试里字错误率约 2%，比 Vosk 小模型低三分之二以上（见[识别效果对比](#识别效果对比)）
 - 🔒 **完全离线**：识别在本机进行，声音不上传、不保存录音
 - 🪟 **不挡视线**：悬浮条小巧半透明，始终置顶，可以拖到任何位置，也可以开鼠标穿透
 - 📚 **按节课记录**：每节课的热词排行、词频时间轴、全部句子，可以导出 CSV
@@ -30,7 +31,7 @@
 2. 解压到一个固定的文件夹，比如 `D:\课堂热词\`。
    > 不要直接在压缩包里运行，也不要放进临时目录，否则设置和记录保存不下来。
 3. 双击 `ClassroomWords.exe`。屏幕顶部会出现悬浮条，右下角托盘里会出现 🎙 麦克风图标。
-4. **第一次使用要下载语音模型**：双击托盘图标打开管理页，进入「语音模型」，点击「中文小模型」的「下载安装」（42MB）。装好后会自动开始监听。
+4. **第一次使用要下载语音模型**：双击托盘图标打开管理页，进入「语音模型」，点击「SenseVoice-Small（推荐）」的「下载安装」（约 160MB，从 GitHub 下载）。装好后会自动开始监听。
 5. 开始上课。同一个词在最近 10 分钟里出现 2 次以上，就会显示在悬浮条上。
 
 系统要求：Windows 10/11 64 位，有一个可用的麦克风。
@@ -103,16 +104,44 @@
 
 ### 语音模型
 
-下载或替换离线语音模型。
+下载、切换、删除离线语音模型。
 
 ![语音模型](docs/admin-model.png)
 
-| 模型 | 大小 | 内存 | 说明 |
+| 模型 | 下载大小 | 内存 | 说明 |
 |---|---|---|---|
-| 中文小模型 `vosk-model-small-cn-0.22` | 42MB | 几百 MB | 默认推荐，普通电脑就能跑 |
-| 中文大模型 `vosk-model-cn-0.22` | 1.3GB | 约 3GB | 更准，加载慢，适合配置好的电脑 |
+| **SenseVoice-Small**（默认） | 160MB | 约 350~400MB | 准确率高、速度快、抗噪声强。说完一句识别一句，大约 1 秒内出结果 |
+| Vosk 中文小模型 | 42MB | 约 200~300MB | 最轻，可以边说边出字，但错字明显多 |
+| Vosk 中文大模型 | 1.3GB | 约 3GB | 比 Vosk 小模型准，加载慢 |
 
-也可以自己下载模型，解压后放到程序目录下的 `model\` 文件夹（里面直接是 `am\`、`conf\` 等子文件夹）；或者在「识别与系统 → 模型目录」里指定其他路径。模型的来源是 [Vosk Models](https://alphacephei.com/vosk/models)。
+> ⚠️ Vosk 模型**不能放在含中文的路径下**（Kaldi 的限制），比如 `D:\课堂热词\`。要用 Vosk，请把程序放在纯英文路径里。SenseVoice 没有这个限制。
+
+#### 手动安装模型
+
+下载不了的话（比如访问 GitHub 很慢），可以自己下载，再放到程序目录下的 `models\` 文件夹：
+
+- **SenseVoice**：下载 [sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2) 和 [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)，把 `model.int8.onnx`、`tokens.txt`、`silero_vad.onnx` 这三个文件放进 `models\sensevoice\`
+- **Vosk 小模型**：下载 [vosk-model-small-cn-0.22.zip](https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip)，解压后把里面的内容（`am\`、`conf\` 等）放进 `modelsosk-small\`
+
+### 识别效果对比
+
+测试材料是用 Windows 中文语音合成的一段 48 秒、8 句话的生物课对话，另外叠加粉红噪声和低频嗡嗡声来模拟教室。按 0.1 秒一块送入，和真实麦克风的处理流程完全一样。测试机是普通台式机 CPU。
+
+| | SenseVoice-Small | Vosk 小模型 |
+|---|---|---|
+| 字错误率（安静） | **1.5%** | 7.5% |
+| 字错误率（信噪比 10dB） | **2.3%** | 7.5% |
+| 字错误率（信噪比 5dB，很吵） | **2.3%** | 9.8% |
+| 处理速度（实时率，越小越快） | **0.02** | 0.09~0.14 |
+| 峰值内存 | 350~390MB | 190~300MB |
+| 模型加载时间 | 1.6 秒 | 0.8 秒 |
+
+典型错误举例（原句 → 识别结果）：
+
+- 「叶绿体是植物进行光合作用的场所」→ SenseVoice ✅ 完全正确；Vosk「戒律立体式植物进行光合作用的场所」
+- 「吸收红光和蓝光，把绿光反射出来」→ SenseVoice ✅ 完全正确；Vosk「吸收宏观和蓝光法律光反射出来」
+
+合成语音比真人说话清楚，真实教室的错误率会更高，但两个模型之间的差距应该差不多。可以用 `tools\compare_asr.py` 拿自己录的音频来对比。
 
 ## 配置说明
 
@@ -124,7 +153,9 @@
 |---|---|---|
 | `device` | `null` | 麦克风编号，`null` 表示系统默认麦克风。建议在管理页的下拉框里选 |
 | `start_listening` | `true` | 启动后自动开始监听 |
-| `model_dir` | `""` | 模型目录，留空表示程序目录下的 `model\` |
+| `asr_model` | `sensevoice` | 使用的模型：`sensevoice` / `vosk-small` / `vosk-large` |
+| `language` | `zh` | SenseVoice 识别语言：`zh` 中文，`auto` 自动识别（中英粤日韩） |
+| `models_dir` | `""` | 模型存放目录，留空表示程序目录下的 `models\` |
 
 ### 热词规则
 
@@ -163,7 +194,7 @@
 
 ## 数据与隐私
 
-- 识别、分词、统计都在本机完成，**不联网**。只有在管理页点「下载模型」时才会访问 Vosk 官网。
+- 识别、分词、统计都在本机完成，**不联网**。只有在管理页点「下载模型」时才会访问 GitHub 或 Vosk 官网。
 - **不保存录音**。只保存识别出来的文字，存在 `data\records.db`（SQLite）。
 - 悬浮条上只显示**重复出现的词**。默认要出现 2 次以上，所以一两句零散的话一般不会上屏。
 - 「显示正在识别的句子」会把原话直接显示在屏幕上，**默认关闭**。在投影或大屏上使用时，建议保持关闭。
@@ -182,7 +213,11 @@
 
 **识别得不准**
 
-小模型在远场、多人同时说话、环境嘈杂时准确率有限。可以：把麦克风放近一点；在「词库」里加入本课的专业术语；或者换中文大模型。
+影响最大的是麦克风：笔记本自带的麦克风放在讲台上，很难听清台下的人。换一个会议全向麦或界面麦，效果提升往往比换模型还大。另外：确认在用 SenseVoice 模型；在「词库」里加入本课的专业术语；「识别语言」保持「中文」。
+
+**提示「Vosk 模型不能放在含中文的路径下」**
+
+把程序文件夹移到纯英文路径（比如 `D:\ClassroomWords\`），或者换用 SenseVoice。
 
 **有些无意义的词总排在前面**
 
@@ -202,7 +237,7 @@
 
 **想在另一台电脑上用**
 
-把整个程序文件夹拷过去即可。连同 `data\` 和 `model\` 一起拷，设置、记录和模型就都带过去了。
+把整个程序文件夹拷过去即可。连同 `data\` 和 `models\` 一起拷，设置、记录和模型就都带过去了。
 
 ## 从源码运行与打包
 
@@ -231,14 +266,19 @@ py -3.12 tools\screenshots.py
 ```
 app/
   main.py        程序入口：Tk 主线程、托盘、线程间调度
-  engine.py      麦克风采集 → Vosk 识别 → jieba 分词 → 实时统计；模型下载
+  engine.py      麦克风采集 → 识别 → jieba 分词 → 实时统计；模型下载与管理
+  backends.py    识别后端：SenseVoice（sherpa-onnx + Silero VAD）、Vosk
   overlay.py     顶部悬浮条
   webserver.py   本地管理页 HTTP 服务与 API
   storage.py     SQLite：课堂与句子
   config.py      配置项与默认值
   winutil.py     单实例、全局热键、开机自启、鼠标穿透
 web/index.html   管理页（单页，无外部依赖）
-tools/           截图脚本
+tools/
+  screenshots.py 用演示数据生成 README 截图
+  compare_asr.py 对比识别模型的准确率、速度、内存
+  e2e_engine.py  用 wav 代替麦克风，端到端测试引擎
+  testdata/      测试音频与参考文本
 ```
 
-技术栈：Python 3.12 · [Vosk](https://alphacephei.com/vosk/)（Kaldi）· [jieba](https://github.com/fxsjy/jieba) · tkinter · [pystray](https://github.com/moses-palmer/pystray) · SQLite · PyInstaller
+技术栈：Python 3.12 · [SenseVoice](https://github.com/FunAudioLLM/SenseVoice) + [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) · [Vosk](https://alphacephei.com/vosk/)（Kaldi）· [jieba](https://github.com/fxsjy/jieba) · tkinter · [pystray](https://github.com/moses-palmer/pystray) · SQLite · PyInstaller

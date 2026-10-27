@@ -1,3 +1,5 @@
+sherpa-onnx
+numpy
 vosk
 jieba
 sounddevice
