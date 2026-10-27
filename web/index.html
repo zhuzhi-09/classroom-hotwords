@@ -504,7 +504,7 @@ document.addEventListener("input", e => {
 function renderPreview() {
   const p = $("#preview"); if (!p) return;
   const c = CFG, words = [["光合作用", 9], ["叶绿体", 6], ["二氧化碳", 5], ["阳光", 4], ["实验", 3], ["氧气", 3], ["植物", 2], ["淀粉", 2]].slice(0, c.top_n);
-  p.style.cssText = `background:${c.bg_color};opacity:${c.alpha};width:min(100%,${c.width}px);height:${c.height}px;font-family:'${c.font_family}';font-size:${c.font_size}px`;
+  p.style.cssText = `background:${c.bg_color};opacity:${c.alpha};width:min(100%,${c.width}px);height:${c.height}px;font-family:'${c.font_family}';font-size:${c.font_size}pt`;
   p.innerHTML = words.map(([w, n], i) => `<b style="color:${i < 3 ? c.accent_color : c.fg_color};white-space:nowrap">${w}${c.show_count ? "×" + n : ""}</b>`).join("");
 }
 $("#btnResetPos").onclick = () => saveConfig({x: null, y: null});

@@ -52,6 +52,9 @@ class Storage:
     # ---------- 课堂 ----------
     def new_session(self, name=None):
         now = time.time()
+        # 上一节课一句话都没录到就直接丢掉，免得每次启动都留下空课堂
+        self._exec("DELETE FROM sessions WHERE ended_at IS NULL AND id NOT IN "
+                   "(SELECT DISTINCT session_id FROM utterances)")
         self._exec("UPDATE sessions SET ended_at=? WHERE ended_at IS NULL", (now,))
         name = name or "课堂 " + datetime.now().strftime("%Y-%m-%d %H:%M")
         return self._exec("INSERT INTO sessions(name, started_at) VALUES(?, ?)", (name, now)).lastrowid

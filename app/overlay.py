@@ -107,6 +107,12 @@ class Overlay:
                                font=(c["font_family"], c["font_size"], "bold" if count else "normal"))
                 lbl.pack(side="left", padx=8)
                 self._bind(lbl)
+            # 放不下的低频词从后往前去掉，避免两头被截断
+            inner.update_idletasks()
+            labels = inner.winfo_children()
+            while len(labels) > 1 and inner.winfo_reqwidth() > c["width"] - 20:
+                labels.pop().destroy()
+                inner.update_idletasks()
         scope = f"近{c['window_minutes']}分钟" if c["window_minutes"] else "本节课"
         partial = f"  ▸ {eng.partial[-40:]}" if eng.partial else ""
         self.status.configure(text=f"{eng.status} · {scope}{partial}")
