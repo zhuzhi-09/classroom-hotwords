@@ -1,5 +1,6 @@
 """识别引擎：麦克风 -> 识别后端(SenseVoice / Vosk) -> jieba -> 存储 + 实时热词统计。"""
 import array
+import hashlib
 import math
 import os
 import queue
@@ -7,6 +8,7 @@ import shutil
 import tarfile
 import threading
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from collections import Counter, deque
@@ -17,28 +19,64 @@ import sounddevice as sd
 from .backends import SenseVoiceBackend, VoskBackend
 from .config import LEGACY_VOSK_DIR
 
+def _ms(repo, path):
+    return f"https://modelscope.cn/models/{repo}/resolve/master/{path}"
+
+
+def _hf(repo, path, host="huggingface.co"):
+    return f"https://{host}/{repo}/resolve/main/{path}"
+
+
+SV_REPO = "csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09"
 GH = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
+
+# 每个文件按顺序尝试多个下载源：魔搭（国内快）→ hf-mirror（国内）→ HuggingFace → GitHub。
+# 魔搭上是第三方转存，所以必须校验 sha256（取自 k2-fsa 官方发布的文件），不一致就换下一个源。
 MODELS = {
     "sensevoice": {
-        "name": "SenseVoice-Small（推荐）", "engine": "sensevoice", "size": "160MB",
-        "desc": "阿里 FunASR 出品，中文准确率高、速度快，抗噪声能力强。说完一句识别一句",
+        "name": "SenseVoice-Small（推荐）", "engine": "sensevoice", "size": "230MB",
+        "desc": "阿里 FunASR 出品，中文准确率高、速度快，抗噪声能力强。说完一句识别一句。有国内下载源",
         "files": ["model.int8.onnx", "tokens.txt", "silero_vad.onnx"],
-        "downloads": [GH + "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2",
-                      GH + "silero_vad.onnx"],
+        "downloads": [
+            {"save": "model.int8.onnx",
+             "bytes": 237115547,
+             "sha256": "12ca1a2ae7ecf3e0019ef2822307ee0b5cadc9196569e379b4c4026f8205276d",
+             "urls": [_ms("Mr7Cat/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09", "model.int8.onnx"),
+                      _ms("aistoy/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09", "model.int8.onnx"),
+                      _hf(SV_REPO, "model.int8.onnx", "hf-mirror.com"),
+                      _hf(SV_REPO, "model.int8.onnx")]},
+            {"save": "tokens.txt",
+             "bytes": 315894,
+             "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc",
+             "urls": [_ms("Mr7Cat/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09", "tokens.txt"),
+                      _ms("aistoy/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09", "tokens.txt"),
+                      _hf(SV_REPO, "tokens.txt", "hf-mirror.com"),
+                      _hf(SV_REPO, "tokens.txt")]},
+            {"save": "silero_vad.onnx",
+             "bytes": 643854,
+             "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+             "urls": [_ms("xnnehang/k2-fsa-silero-vad", "silero_vad.onnx"),
+                      _ms("liaowenbin/silero_vad", "silero_vad.onnx"),
+                      _ms("WEAAEW/silero-vad-onnx", "v4-sherpa/silero_vad.onnx"),
+                      GH + "silero_vad.onnx"]},
+        ],
     },
     "vosk-small": {
         "name": "Vosk 中文小模型", "engine": "vosk", "size": "42MB",
-        "desc": "最轻，可以边说边出字，但准确率明显不如 SenseVoice",
+        "desc": "最轻，可以边说边出字，但准确率明显不如 SenseVoice。从国外官网下载，国内可能较慢",
         "files": ["conf/model.conf"],
-        "downloads": ["https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"],
+        "downloads": [{"urls": ["https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip"]}],
     },
     "vosk-large": {
         "name": "Vosk 中文大模型", "engine": "vosk", "size": "1.3GB",
-        "desc": "比 Vosk 小模型准，但占内存约 3GB、加载慢",
+        "desc": "比 Vosk 小模型准，但占内存约 3GB、加载慢。从国外官网下载，国内可能较慢",
         "files": ["conf/model.conf"],
-        "downloads": ["https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip"],
+        "downloads": [{"urls": ["https://alphacephei.com/vosk/models/vosk-model-cn-0.22.zip"]}],
     },
 }
+CONNECT_TIMEOUT = 30     # 秒：连不上或长时间收不到数据就换源
+STALL_SECONDS = 20       # 连续这么久平均速度低于 MIN_SPEED 就换源
+MIN_SPEED = 30 * 1024    # 字节/秒
 SAMPLE_RATE = 16000
 
 
@@ -261,22 +299,28 @@ class Engine:
         try:
             shutil.rmtree(work, ignore_errors=True)
             os.makedirs(work)
-            urls = info["downloads"]
-            for i, url in enumerate(urls):
-                fname = os.path.join(work, url.rsplit("/", 1)[-1])
-                with urllib.request.urlopen(url, timeout=30) as r, open(fname, "wb") as f:
-                    total = int(r.headers.get("Content-Length") or 0)
-                    done = 0
-                    while chunk := r.read(1 << 16):
-                        f.write(chunk)
-                        done += len(chunk)
-                        if total:
-                            d["progress"] = round((i + done / total) * 100 / len(urls), 1)
+            items = info["downloads"]
+            weights = [it.get("bytes", 1) for it in items]
+            for i, item in enumerate(items):
+                fname = os.path.join(work, item.get("save") or item["urls"][0].rsplit("/", 1)[-1])
+                errors = []
+                for url in item["urls"]:
+                    host = urllib.parse.urlparse(url).hostname
+                    d["message"] = f"下载中：{info['name']}（{i + 1}/{len(items)}，来源 {host}）"
+
+                    def progress(frac):
+                        d["progress"] = round((sum(weights[:i]) + frac * weights[i]) * 100 / sum(weights), 1)
+                    try:
+                        self._fetch(url, fname, item.get("sha256"), progress)
+                        break
+                    except Exception as e:
+                        errors.append(f"{host}: {e}")
+                else:
+                    raise RuntimeError("所有下载源都失败了 —— " + "；".join(errors))
                 if fname.endswith((".zip", ".tar.bz2")):
                     d["message"] = "解压中…"
                     self._extract(fname, work)
                     os.remove(fname)
-                    d["message"] = "下载中：" + info["name"]
             if not self._has_files(key, work):
                 raise RuntimeError("下载的文件不完整")
             if self.backend_key and self.backend_key[0] == key:
@@ -291,6 +335,31 @@ class Engine:
             d.update(state="error", message=f"下载失败：{e}")
         finally:
             shutil.rmtree(work, ignore_errors=True)
+
+    @staticmethod
+    def _fetch(url, path, sha256, progress):
+        """下载单个文件；连不上、太慢或校验不通过都抛异常，由调用方换下一个源。"""
+        req = urllib.request.Request(url, headers={"User-Agent": "ClassroomWords/1.2"})
+        h = hashlib.sha256()
+        with urllib.request.urlopen(req, timeout=CONNECT_TIMEOUT) as r, open(path, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            done, window_start, window_bytes = 0, time.monotonic(), 0
+            while chunk := r.read(1 << 16):
+                f.write(chunk)
+                h.update(chunk)
+                done += len(chunk)
+                window_bytes += len(chunk)
+                if total:
+                    progress(done / total)
+                elapsed = time.monotonic() - window_start
+                if elapsed >= STALL_SECONDS:
+                    if window_bytes / elapsed < MIN_SPEED:
+                        raise RuntimeError(f"速度太慢（{window_bytes / elapsed / 1024:.0f}KB/s）")
+                    window_start, window_bytes = time.monotonic(), 0
+        if total and done != total:
+            raise RuntimeError("下载不完整")
+        if sha256 and h.hexdigest() != sha256:
+            raise RuntimeError("文件校验不一致")
 
     @staticmethod
     def _extract(archive, dest):

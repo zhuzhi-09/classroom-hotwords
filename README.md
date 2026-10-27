@@ -31,7 +31,7 @@
 2. 解压到一个固定的文件夹，比如 `D:\课堂热词\`。
    > 不要直接在压缩包里运行，也不要放进临时目录，否则设置和记录保存不下来。
 3. 双击 `ClassroomWords.exe`。屏幕顶部会出现悬浮条，右下角托盘里会出现 🎙 麦克风图标。
-4. **第一次使用要下载语音模型**：双击托盘图标打开管理页，进入「语音模型」，点击「SenseVoice-Small（推荐）」的「下载安装」（约 160MB，从 GitHub 下载）。装好后会自动开始监听。
+4. **第一次使用要下载语音模型**：双击托盘图标打开管理页，进入「语音模型」，点击「SenseVoice-Small（推荐）」的「下载安装」（约 230MB）。程序会优先从国内的魔搭 ModelScope 下载，不需要翻墙。装好后会自动开始监听。
 5. 开始上课。同一个词在最近 10 分钟里出现 2 次以上，就会显示在悬浮条上。
 
 系统要求：Windows 10/11 64 位，有一个可用的麦克风。
@@ -110,18 +110,35 @@
 
 | 模型 | 下载大小 | 内存 | 说明 |
 |---|---|---|---|
-| **SenseVoice-Small**（默认） | 160MB | 约 350~400MB | 准确率高、速度快、抗噪声强。说完一句识别一句，大约 1 秒内出结果 |
+| **SenseVoice-Small**（默认） | 230MB | 约 350~400MB | 准确率高、速度快、抗噪声强。说完一句识别一句，大约 1 秒内出结果 |
 | Vosk 中文小模型 | 42MB | 约 200~300MB | 最轻，可以边说边出字，但错字明显多 |
 | Vosk 中文大模型 | 1.3GB | 约 3GB | 比 Vosk 小模型准，加载慢 |
 
 > ⚠️ Vosk 模型**不能放在含中文的路径下**（Kaldi 的限制），比如 `D:\课堂热词\`。要用 Vosk，请把程序放在纯英文路径里。SenseVoice 没有这个限制。
 
+#### 下载源
+
+SenseVoice 的每个文件都配了多个下载源，按顺序自动尝试：**魔搭 ModelScope（国内）→ hf-mirror（国内）→ HuggingFace → GitHub**。某个源连不上、超过 20 秒速度低于 30KB/s，或文件校验不一致，就自动换下一个。
+
+魔搭上的文件是社区转存的，所以每个文件下载完都会用 k2-fsa 官方发布文件的 SHA256 校验，不一致就丢掉换源，不会装上被改过的文件。
+
+Vosk 模型只能从 Vosk 官网（国外）下载，国内可能很慢。
+
 #### 手动安装模型
 
-下载不了的话（比如访问 GitHub 很慢），可以自己下载，再放到程序目录下的 `models\` 文件夹：
+自动下载失败时，可以用浏览器手动下载，再放进程序目录下的 `models\` 文件夹：
 
-- **SenseVoice**：下载 [sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09.tar.bz2) 和 [silero_vad.onnx](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx)，把 `model.int8.onnx`、`tokens.txt`、`silero_vad.onnx` 这三个文件放进 `models\sensevoice\`
-- **Vosk 小模型**：下载 [vosk-model-small-cn-0.22.zip](https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip)，解压后把里面的内容（`am\`、`conf\` 等）放进 `modelsosk-small\`
+**SenseVoice**：在 `models\` 里新建 `sensevoice` 文件夹，放入以下三个文件（任选一个下载源）：
+
+| 文件 | 国内（魔搭） | 国外 |
+|---|---|---|
+| `model.int8.onnx`（226MB） | [下载](https://modelscope.cn/models/aistoy/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/master/model.int8.onnx) | [HuggingFace](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/main/model.int8.onnx) |
+| `tokens.txt` | [下载](https://modelscope.cn/models/aistoy/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/master/tokens.txt) | [HuggingFace](https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2025-09-09/resolve/main/tokens.txt) |
+| `silero_vad.onnx` | [下载](https://modelscope.cn/models/xnnehang/k2-fsa-silero-vad/resolve/master/silero_vad.onnx) | [GitHub](https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx) |
+
+放好后的结构是 `models\sensevoice\model.int8.onnx`、`models\sensevoice	okens.txt`、`models\sensevoice\silero_vad.onnx`。回到管理页刷新「语音模型」，显示「已安装」就可以了。
+
+**Vosk 小模型**：下载 [vosk-model-small-cn-0.22.zip](https://alphacephei.com/vosk/models/vosk-model-small-cn-0.22.zip)，解压后把里面的内容（`am\`、`conf\` 等）放进 `modelsosk-small\`。
 
 ### 识别效果对比
 
@@ -194,7 +211,7 @@
 
 ## 数据与隐私
 
-- 识别、分词、统计都在本机完成，**不联网**。只有在管理页点「下载模型」时才会访问 GitHub 或 Vosk 官网。
+- 识别、分词、统计都在本机完成，**不联网**。只有在管理页点「下载模型」时才会访问魔搭、HuggingFace、GitHub 或 Vosk 官网。
 - **不保存录音**。只保存识别出来的文字，存在 `data\records.db`（SQLite）。
 - 悬浮条上只显示**重复出现的词**。默认要出现 2 次以上，所以一两句零散的话一般不会上屏。
 - 「显示正在识别的句子」会把原话直接显示在屏幕上，**默认关闭**。在投影或大屏上使用时，建议保持关闭。
@@ -206,6 +223,10 @@
 **悬浮条一直显示「未安装语音模型」**
 
 打开管理页 →「语音模型」，下载安装。
+
+**模型下载失败**
+
+管理页会显示每个下载源失败的原因。如果所有源都失败了，通常是这台电脑上不了网，或者被学校的防火墙拦住了。可以在别的电脑上按[手动安装模型](#手动安装模型)下载好，再拷过来。
 
 **一直显示「等待热词…」**
 
